@@ -1,37 +1,80 @@
 import io
 import os
 import sys
-from keras.applications.vgg19 import VGG19
-from keras.applications.vgg19 import preprocess_input
-from keras.preprocessing import image
-from keras.models import Model
-from keras.layers import Input, Activation, Dropout, Flatten, Dense
-import numpy as np
+import json
 from datetime import date
 from PIL import Image
+import requests
+
 import tornado.escape
 import tornado.ioloop
 import tornado.web
 
-model = VGG19(weights='imagenet')
-#model = Model(inputs=model.input, outputs=model.get_layer('block4_pool').output)
+import numpy as np
+from keras.applications.inception_v3 import InceptionV3
+from keras.applications.inception_v3 import preprocess_input
+from keras.preprocessing import image
+from keras.models import Model
+from keras.layers import Input, Activation, Dropout, Flatten, Dense
 
-class PostRegister(tornado.web.RequestHandler):
-  def post(self):
-    file_body = self.request.files['file'][0]['body']
-    img = Image.open(io.BytesIO(file_body)).resize((224, 224))
+tornado_port = 8888
+gannoy_host = "localhost"
+gannoy_port = 1323
+gannoy_url = "http://{host}:{port}".format(host=gannoy_host, port=gannoy_port)
+
+model = InceptionV3(weights='imagenet', include_top=False, pooling='avg')
+
+def get_file_id(requested_file):
+  file_id, ext = os.path.splitext(os.path.basename(requested_file['filename']))
+  if not file_id.isdigit():
+    raise tornado.web.HTTPError(status_code=400, log_message="Bad file name. It must be a number.")
+  return int(file_id)
+
+class FeatureExtractor:
+  def __init__(self, file_body):
+    self.feature = self.__extract(file_body)
+
+  def __extract(self, file_body):
+    img = Image.open(io.BytesIO(file_body)).resize((299, 299))
     x = image.img_to_array(img)
+    if len(x.shape) > 2 and x.shape[2] == 4:
+      x = x[:,:,:3]
     x = np.expand_dims(x, axis=0)
     x = preprocess_input(x)
-    #block4_pool_features = model.predict(x)
-    preds = model.predict(x)[0]
-    print(preds)
+    return model.predict(x)
+
+  def to_dict(self):
+    return {'features': self.feature.ravel().tolist()}
+
+class Register(tornado.web.RequestHandler):
+  def post(self):
+    requested_file = self.request.files['file'][0]
+    file_id = get_file_id(requested_file)
+
+    feature = FeatureExtractor(requested_file['body'])
+    r = requests.put('{gannoy_url}/databases/{database}/features/{key}'.format(gannoy_url=gannoy_url, database='image', key=file_id), json=feature.to_dict())
+    self.write(str(r.status_code))
+
+class Search(tornado.web.RequestHandler):
+  def post(self):
+    requested_file = self.request.files['file'][0]
+    file_id = get_file_id(requested_file)
+
+    feature = FeatureExtractor(requested_file['body'])
+    r = requests.put('{gannoy_url}/databases/{database}/features/{key}'.format(gannoy_url=gannoy_url, database='image', key=file_id), json=feature.to_dict())
+
+    if r.status_code == 200:
+      search_result = requests.get('{gannoy_url}/search'.format(gannoy_url=gannoy_url), params={'database': 'image', 'key': file_id, 'limit': 10})
+      self.write(search_result.text)
+    else:
+      self.write(str(r.status_code))
 
 application = tornado.web.Application([
-  (r"/register", PostRegister),
+  (r"/register", Register),
+  (r"/search", Search),
 ])
 
 if __name__ == "__main__":
-  application.listen(8888)
+  application.listen(tornado_port)
   tornado.ioloop.IOLoop.instance().start()
 
