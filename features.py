@@ -18,6 +18,7 @@ from keras.models import Model
 from keras.layers import Input, Activation, Dropout, Flatten, Dense
 
 tornado_port = 8888
+database_name = 'danbooru'
 gannoy_host = "localhost"
 gannoy_port = 1323
 gannoy_url = "http://{host}:{port}".format(host=gannoy_host, port=gannoy_port)
@@ -52,7 +53,7 @@ class Register(tornado.web.RequestHandler):
     file_id = get_file_id(requested_file)
 
     feature = FeatureExtractor(requested_file['body'])
-    r = requests.put('{gannoy_url}/databases/{database}/features/{key}'.format(gannoy_url=gannoy_url, database='image', key=file_id), json=feature.to_dict())
+    r = requests.put('{gannoy_url}/databases/{database}/features/{key}'.format(gannoy_url=gannoy_url, database=database_name, key=file_id), json=feature.to_dict())
     self.write(str(r.status_code))
 
 class Search(tornado.web.RequestHandler):
@@ -61,10 +62,10 @@ class Search(tornado.web.RequestHandler):
     file_id = get_file_id(requested_file)
 
     feature = FeatureExtractor(requested_file['body'])
-    r = requests.put('{gannoy_url}/databases/{database}/features/{key}'.format(gannoy_url=gannoy_url, database='image', key=file_id), json=feature.to_dict())
+    r = requests.put('{gannoy_url}/databases/{database}/features/{key}'.format(gannoy_url=gannoy_url, database=database_name, key=file_id), json=feature.to_dict())
 
     if r.status_code == 200:
-      search_result = requests.get('{gannoy_url}/search'.format(gannoy_url=gannoy_url), params={'database': 'image', 'key': file_id, 'limit': 10})
+      search_result = requests.get('{gannoy_url}/search'.format(gannoy_url=gannoy_url), params={'database': database_name, 'key': file_id, 'limit': 10})
       self.write(search_result.text)
     else:
       self.write(str(r.status_code))
