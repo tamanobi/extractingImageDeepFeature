@@ -70,9 +70,15 @@ class Search(tornado.web.RequestHandler):
     else:
       self.write(str(r.status_code))
 
+class Extract(tornado.web.RequestHandler):
+  def post(self):
+    requested_file = self.request.files['file'][0]
+    self.write(json.dumps(FeatureExtractor(requested_file['body']).to_dict()))
+
 application = tornado.web.Application([
   (r"/register", Register),
   (r"/search", Search),
+  (r"/extract", Extract),
 ])
 
 if __name__ == "__main__":
